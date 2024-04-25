@@ -28,6 +28,9 @@ terms of the MIT license. A copy of the license can be found in the file
 #include <sys/mman.h>  // mmap
 #include <unistd.h>    // sysconf
 
+#include <assert.h>
+#include <threads.h>
+
 #if defined(__linux__)
   #include <features.h>
   #include <fcntl.h>
@@ -141,8 +144,22 @@ void _mi_prim_mem_init( mi_os_mem_config_t* config ) {
 //---------------------------------------------
 // free
 //---------------------------------------------
+__attribute__((visibility("default")))
+void (*simple_parallel_register_munmaped_areas)(void* ptr, size_t size) = NULL;
+
+__attribute__((visibility("default")))
+thread_local bool s_p_should_proxy_mmap = false;
+
+__attribute__((visibility("default")))
+thread_local bool s_p_this_thread_should_be_proxied = true;
+
+thread_local bool s_p_call_from_arena_reserve = false;
 
 int _mi_prim_free(void* addr, size_t size ) {
+  if (s_p_should_proxy_mmap) {
+    assert(simple_parallel_register_munmaped_areas != NULL);
+    simple_parallel_register_munmaped_areas(addr, size);
+  }
   bool err = (munmap(addr, size) == -1);
   return (err ? errno : 0);
 }
@@ -160,35 +177,31 @@ static int unix_madvise(void* addr, size_t size, int advice) {
   #endif
 }
 
-static void* unix_mmap_prim(void* addr, size_t size, size_t try_alignment, int protect_flags, int flags, int fd) {
+__attribute__((visibility("default")))
+void* (*simple_parallel_cross_node_heap_mmap)(void*   __addr,
+                                              size_t  __len,
+                                              int     __prot,
+                                              int     __flags,
+                                              int     __fd,
+                                              __off_t __offset) = NULL;
+
+
+static void* unix_mmap_prim(void* /*unused*/, size_t size, size_t try_alignment, int protect_flags, int flags, int fd) {
   MI_UNUSED(try_alignment);
   void* p = NULL;
-  #if defined(MAP_ALIGNED)  // BSD
-  if (addr == NULL && try_alignment > 1 && (try_alignment % _mi_os_page_size()) == 0) {
-    size_t n = mi_bsr(try_alignment);
-    if (((size_t)1 << n) == try_alignment && n >= 12 && n <= 30) {  // alignment is a power of 2 and 4096 <= alignment <= 1GiB
-      p = mmap(addr, size, protect_flags, flags | MAP_ALIGNED(n), fd, 0);
-      if (p==MAP_FAILED || !_mi_is_aligned(p,try_alignment)) { 
-        int err = errno;
-        _mi_warning_message("unable to directly request aligned OS memory (error: %d (0x%x), size: 0x%zx bytes, alignment: 0x%zx, hint address: %p)\n", err, err, size, try_alignment, addr);
-      }
-      if (p!=MAP_FAILED) return p;
-      // fall back to regular mmap      
-    }
-  }
-  #elif defined(MAP_ALIGN)  // Solaris
-  if (addr == NULL && try_alignment > 1 && (try_alignment % _mi_os_page_size()) == 0) {
-    p = mmap((void*)try_alignment, size, protect_flags, flags | MAP_ALIGN, fd, 0);  // addr parameter is the required alignment
-    if (p!=MAP_FAILED) return p;
-    // fall back to regular mmap
-  }
-  #endif
-  #if (MI_INTPTR_SIZE >= 8) && !defined(MAP_ALIGNED)
+#if (MI_INTPTR_SIZE >= 8) && !defined(MAP_ALIGNED)
   // on 64-bit systems, use the virtual address area after 2TiB for 4MiB aligned allocations
-  if (addr == NULL) {
+  {
     void* hint = _mi_os_get_aligned_hint(try_alignment, size);
-    if (hint != NULL) {
-      p = mmap(hint, size, protect_flags, flags, fd, 0);
+    {
+        if (s_p_should_proxy_mmap && s_p_call_from_arena_reserve) {
+            assert(simple_parallel_cross_node_heap_mmap != NULL);
+            p = simple_parallel_cross_node_heap_mmap(
+                    hint, size, protect_flags, flags, fd, 0);
+      } else {
+          p = mmap(hint, size, protect_flags, flags, fd, 0);
+      }
+
       if (p==MAP_FAILED || !_mi_is_aligned(p,try_alignment)) { 
         #if MI_TRACK_ENABLED  // asan sometimes does not instrument errno correctly?
         int err = 0;
@@ -199,14 +212,13 @@ static void* unix_mmap_prim(void* addr, size_t size, size_t try_alignment, int p
       }
       if (p!=MAP_FAILED) return p;
       // fall back to regular mmap      
+      
+      return NULL;
     }
   }
+  #else
+    #error "some condition not met"
   #endif
-  // regular mmap
-  p = mmap(addr, size, protect_flags, flags, fd, 0);
-  if (p!=MAP_FAILED) return p;
-  // failed to allocate
-  return NULL;
 }
 
 static int unix_mmap_fd(void) {
@@ -857,3 +869,5 @@ void _mi_prim_thread_associate_default_heap(mi_heap_t* heap) {
 }
 
 #endif
+
+thread_local bool s_p_this_thread_initialized = false;

@@ -11,6 +11,9 @@ terms of the MIT license. A copy of the license can be found in the file
 #include <string.h>  // memcpy, memset
 #include <stdlib.h>  // atexit
 
+#include <assert.h>
+#include <stdatomic.h>
+#include <threads.h>
 
 // Empty page used to initialize the small free pages array
 const mi_page_t _mi_page_empty = {
@@ -141,6 +144,7 @@ mi_threadid_t _mi_thread_id(void) mi_attr_noexcept {
 }
 
 // the thread-local default heap for allocation
+__attribute__((visibility("default")))
 mi_decl_thread mi_heap_t* _mi_heap_default = (mi_heap_t*)&_mi_heap_empty;
 
 extern mi_heap_t _mi_heap_main;
@@ -282,6 +286,16 @@ void _mi_thread_data_collect(void) {
   }
 }
 
+extern thread_local bool s_p_this_thread_should_be_proxied;
+
+extern thread_local bool s_p_should_proxy_mmap;
+
+__attribute__((visibility("default")))
+void (*simple_parallel_register_heap)(mi_heap_t* heap) = NULL;
+
+__attribute__((visibility("default")))
+atomic_int s_p_comm_rank = -1;
+
 // Initialize the thread local default heap, called from `mi_thread_init`
 static bool _mi_heap_init(void) {
   if (mi_heap_is_initialized(mi_prim_get_default_heap())) return true;
@@ -313,6 +327,13 @@ static bool _mi_heap_init(void) {
     tld->segments.os = &tld->os;
     tld->os.stats = &tld->stats;
     _mi_heap_set_default_direct(heap);
+    if (s_p_this_thread_should_be_proxied) {
+        if (atomic_load(&s_p_comm_rank) == 0) {
+            s_p_should_proxy_mmap = true;
+            assert(simple_parallel_register_heap != NULL);
+            simple_parallel_register_heap(heap);
+        }
+    }
   }
   return false;
 }

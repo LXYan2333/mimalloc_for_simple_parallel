@@ -25,6 +25,9 @@ The arena allocation needs to be thread safe and we use an atomic bitmap to allo
 #include <string.h>  // memset
 #include <errno.h>   // ENOMEM
 
+#include <stdbool.h>
+#include <threads.h>
+
 #include "bitmap.h"  // atomic bitmap
 
 /* -----------------------------------------------------------
@@ -297,6 +300,7 @@ static void* mi_arena_try_alloc_at_id(mi_arena_id_t arena_id, bool match_numa_no
   return p;
 }
 
+extern thread_local bool s_p_should_proxy_mmap;
 
 // allocate from an arena with fallback to the OS
 static mi_decl_noinline void* mi_arena_try_alloc(int numa_node, size_t size, size_t alignment, 
@@ -315,7 +319,7 @@ static mi_decl_noinline void* mi_arena_try_alloc(int numa_node, size_t size, siz
       if (p != NULL) return p;
     }
   }
-  else {
+  else if (!s_p_should_proxy_mmap) { // we won't try to reuse free `mmap`ed areas since thy might not be managed by simple_parallel.
     // try numa affine allocation
     for (size_t i = 0; i < max_arena; i++) {    
       void* p = mi_arena_try_alloc_at_id(mi_arena_id_create(i), true, numa_node, size, alignment, commit, allow_large, req_arena_id, memid, tld);
@@ -332,6 +336,8 @@ static mi_decl_noinline void* mi_arena_try_alloc(int numa_node, size_t size, siz
   }
   return NULL;
 }
+
+extern thread_local bool s_p_call_from_arena_reserve;
 
 // try to reserve a fresh arena space
 static bool mi_arena_reserve(size_t req_size, bool allow_large, mi_arena_id_t req_arena_id, mi_arena_id_t *arena_id)
@@ -359,8 +365,10 @@ static bool mi_arena_reserve(size_t req_size, bool allow_large, mi_arena_id_t re
   if (mi_option_get(mi_option_arena_eager_commit) == 2)      { arena_commit = _mi_os_has_overcommit(); }
   else if (mi_option_get(mi_option_arena_eager_commit) == 1) { arena_commit = true; }
 
+  s_p_call_from_arena_reserve = true;
   return (mi_reserve_os_memory_ex(arena_reserve, arena_commit, allow_large, false /* exclusive */, arena_id) == 0);
-}    
+  s_p_call_from_arena_reserve = false;
+}
 
 
 void* _mi_arena_alloc_aligned(size_t size, size_t alignment, size_t align_offset, bool commit, bool allow_large,
