@@ -4,6 +4,10 @@ project(libmimalloc C CXX)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
+# simple_parallel modified.
+# Use the C++ compiler to compile the library (instead of the C compiler)
+set(MI_USE_CXX ON)
+
 option(MI_SECURE            "Use full security mitigations (like guard pages, allocation randomization, double-free mitigation, and free-list corruption detection)" OFF)
 option(MI_DEBUG_FULL        "Use full internal heap invariant checking in DEBUG mode (expensive)" OFF)
 option(MI_PADDING           "Enable padding to detect heap block overflow (always on in DEBUG or SECURE mode, or with Valgrind/ASAN)" OFF)
@@ -13,7 +17,7 @@ option(MI_SHOW_ERRORS       "Show error and warning messages by default (only en
 option(MI_TRACK_VALGRIND    "Compile with Valgrind support (adds a small overhead)" OFF)
 option(MI_TRACK_ASAN        "Compile with address sanitizer support (adds a small overhead)" OFF)
 option(MI_TRACK_ETW         "Compile with Windows event tracing (ETW) support (adds a small overhead)" OFF)
-option(MI_USE_CXX           "Use the C++ compiler to compile the library (instead of the C compiler)" OFF)
+option(MI_USE_CXX           "Use the C++ compiler to compile the library (instead of the C compiler) set to ON by simple_parallel" OFF)
 option(MI_SEE_ASM           "Generate assembly files" OFF)
 option(MI_OSX_INTERPOSE     "Use interpose to override standard malloc on macOS" ON)
 option(MI_OSX_ZONE          "Use malloc zone to override standard malloc on macOS" ON)

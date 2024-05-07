@@ -148,12 +148,12 @@ __attribute__((visibility("default")))
 void (*simple_parallel_register_munmaped_areas)(void* ptr, size_t size) = NULL;
 
 __attribute__((visibility("default")))
-thread_local bool s_p_should_proxy_mmap = false;
+__thread bool s_p_should_proxy_mmap = false;
 
 __attribute__((visibility("default")))
-thread_local bool s_p_this_thread_should_be_proxied = true;
+__thread bool s_p_this_thread_should_be_proxied = true;
 
-thread_local bool s_p_call_from_arena_reserve = false;
+__thread bool s_p_call_from_arena_reserve = false;
 
 int _mi_prim_free(void* addr, size_t size ) {
   if (s_p_should_proxy_mmap) {

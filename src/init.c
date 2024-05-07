@@ -12,7 +12,7 @@ terms of the MIT license. A copy of the license can be found in the file
 #include <stdlib.h>  // atexit
 
 #include <assert.h>
-#include <stdatomic.h>
+#include <atomic>
 #include <threads.h>
 
 // Empty page used to initialize the small free pages array
@@ -286,15 +286,15 @@ void _mi_thread_data_collect(void) {
   }
 }
 
-extern thread_local bool s_p_this_thread_should_be_proxied;
+extern __thread bool s_p_this_thread_should_be_proxied;
 
-extern thread_local bool s_p_should_proxy_mmap;
+extern __thread bool s_p_should_proxy_mmap;
 
 __attribute__((visibility("default")))
 void (*simple_parallel_register_heap)(mi_heap_t* heap) = NULL;
 
 __attribute__((visibility("default")))
-atomic_int s_p_comm_rank = -1;
+std::atomic<int> s_p_comm_rank = -1;
 
 // Initialize the thread local default heap, called from `mi_thread_init`
 static bool _mi_heap_init(void) {

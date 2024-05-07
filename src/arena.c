@@ -300,7 +300,7 @@ static void* mi_arena_try_alloc_at_id(mi_arena_id_t arena_id, bool match_numa_no
   return p;
 }
 
-extern thread_local bool s_p_should_proxy_mmap;
+extern __thread bool s_p_should_proxy_mmap;
 
 // allocate from an arena with fallback to the OS
 static mi_decl_noinline void* mi_arena_try_alloc(int numa_node, size_t size, size_t alignment, 
@@ -337,7 +337,7 @@ static mi_decl_noinline void* mi_arena_try_alloc(int numa_node, size_t size, siz
   return NULL;
 }
 
-extern thread_local bool s_p_call_from_arena_reserve;
+extern __thread bool s_p_call_from_arena_reserve;
 
 // try to reserve a fresh arena space
 static bool mi_arena_reserve(size_t req_size, bool allow_large, mi_arena_id_t req_arena_id, mi_arena_id_t *arena_id)
