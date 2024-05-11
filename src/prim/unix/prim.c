@@ -29,6 +29,7 @@ terms of the MIT license. A copy of the license can be found in the file
 #include <unistd.h>    // sysconf
 
 #include <assert.h>
+#include <simple_parallel/master.h>
 #include <threads.h>
 
 #if defined(__linux__)
@@ -140,12 +141,9 @@ void _mi_prim_mem_init( mi_os_mem_config_t* config ) {
   config->has_virtual_reserve = true; // todo: check if this true for NetBSD?  (for anonymous mmap with PROT_NONE)
 }
 
-
 //---------------------------------------------
 // free
 //---------------------------------------------
-__attribute__((visibility("default")))
-void (*simple_parallel_register_munmaped_areas)(void* ptr, size_t size) = NULL;
 
 __attribute__((visibility("default")))
 __thread bool s_p_should_proxy_mmap = false;
@@ -157,8 +155,7 @@ __thread bool s_p_call_from_arena_reserve = false;
 
 int _mi_prim_free(void* addr, size_t size ) {
   if (s_p_should_proxy_mmap) {
-    assert(simple_parallel_register_munmaped_areas != NULL);
-    simple_parallel_register_munmaped_areas(addr, size);
+      simple_parallel::master::register_munmaped_areas(addr, size);
   }
   bool err = (munmap(addr, size) == -1);
   return (err ? errno : 0);

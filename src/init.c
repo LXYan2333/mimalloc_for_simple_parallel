@@ -13,6 +13,7 @@ terms of the MIT license. A copy of the license can be found in the file
 
 #include <assert.h>
 #include <atomic>
+#include <simple_parallel/master.h>
 #include <threads.h>
 
 // Empty page used to initialize the small free pages array
@@ -291,9 +292,6 @@ extern __thread bool s_p_this_thread_should_be_proxied;
 extern __thread bool s_p_should_proxy_mmap;
 
 __attribute__((visibility("default")))
-void (*simple_parallel_register_heap)(mi_heap_t* heap) = NULL;
-
-__attribute__((visibility("default")))
 std::atomic<int> s_p_comm_rank = -1;
 
 // Initialize the thread local default heap, called from `mi_thread_init`
@@ -330,8 +328,7 @@ static bool _mi_heap_init(void) {
     if (s_p_this_thread_should_be_proxied) {
         if (atomic_load(&s_p_comm_rank) == 0) {
             s_p_should_proxy_mmap = true;
-            assert(simple_parallel_register_heap != NULL);
-            simple_parallel_register_heap(heap);
+            simple_parallel::master::register_heap(heap);
         }
     }
   }

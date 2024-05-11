@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.13)
 project(libmimalloc C CXX)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 
 # simple_parallel modified.
 # Use the C++ compiler to compile the library (instead of the C compiler)
