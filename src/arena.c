@@ -27,6 +27,7 @@ The arena allocation needs to be thread safe and we use an atomic bitmap to allo
 
 #include <stdbool.h>
 #include <threads.h>
+#include <simple_parallel/detail.h>
 
 #include "bitmap.h"  // atomic bitmap
 
@@ -59,6 +60,7 @@ typedef struct mi_arena_s {
   mi_bitmap_field_t* blocks_committed;    // are the blocks committed? (can be NULL for memory that cannot be decommitted)
   mi_bitmap_field_t* blocks_purge;        // blocks that can be (reset) decommitted. (can be NULL for memory that cannot be (reset) decommitted)  
   mi_bitmap_field_t  blocks_inuse[1];     // in-place bitmap of in-use blocks (of size `field_count`)
+  bool managed_by_simple_parallel;
 } mi_arena_t;
 
 
@@ -174,6 +176,8 @@ static void* mi_arena_static_zalloc(size_t size, size_t alignment, mi_memid_t* m
   return p;
 }
 
+extern __thread bool s_p_call_from_arena_reserve;
+
 static void* mi_arena_meta_zalloc(size_t size, mi_memid_t* memid, mi_stats_t* stats) {
   *memid = _mi_memid_none();
 
@@ -182,7 +186,15 @@ static void* mi_arena_meta_zalloc(size_t size, mi_memid_t* memid, mi_stats_t* st
   if (p != NULL) return p;
 
   // or fall back to the OS
-  return _mi_os_alloc(size, memid, stats);
+  bool temp = s_p_call_from_arena_reserve;
+
+  s_p_call_from_arena_reserve = false;
+
+  p = _mi_os_alloc(size, memid, stats);
+
+  s_p_call_from_arena_reserve = temp;
+  
+  return p;
 }
 
 static void mi_arena_meta_free(void* p, mi_memid_t memid, size_t size, mi_stats_t* stats) {
@@ -319,9 +331,13 @@ static mi_decl_noinline void* mi_arena_try_alloc(int numa_node, size_t size, siz
       if (p != NULL) return p;
     }
   }
-  else if (!s_p_should_proxy_mmap) { // we won't try to reuse free `mmap`ed areas since thy might not be managed by simple_parallel.
+  else {
     // try numa affine allocation
     for (size_t i = 0; i < max_arena; i++) {    
+      mi_arena_t* arena = mi_atomic_load_ptr_acquire(mi_arena_t, &mi_arenas[i]);
+      if (s_p_should_proxy_mmap && !arena->managed_by_simple_parallel) {
+        continue;
+      };
       void* p = mi_arena_try_alloc_at_id(mi_arena_id_create(i), true, numa_node, size, alignment, commit, allow_large, req_arena_id, memid, tld);
       if (p != NULL) return p;
     }
@@ -329,6 +345,10 @@ static mi_decl_noinline void* mi_arena_try_alloc(int numa_node, size_t size, siz
     // try from another numa node instead..
     if (numa_node >= 0) {  // if numa_node was < 0 (no specific affinity requested), all arena's have been tried already
       for (size_t i = 0; i < max_arena; i++) {
+        mi_arena_t* arena = mi_atomic_load_ptr_acquire(mi_arena_t, &mi_arenas[i]);
+        if (s_p_should_proxy_mmap && !arena->managed_by_simple_parallel) {
+          continue;
+        };
         void* p = mi_arena_try_alloc_at_id(mi_arena_id_create(i), false /* only proceed if not numa local */, numa_node, size, alignment, commit, allow_large, req_arena_id, memid, tld);
         if (p != NULL) return p;
       }
@@ -366,8 +386,10 @@ static bool mi_arena_reserve(size_t req_size, bool allow_large, mi_arena_id_t re
   else if (mi_option_get(mi_option_arena_eager_commit) == 1) { arena_commit = true; }
 
   s_p_call_from_arena_reserve = true;
-  return (mi_reserve_os_memory_ex(arena_reserve, arena_commit, allow_large, false /* exclusive */, arena_id) == 0);
+  auto r = mi_reserve_os_memory_ex(arena_reserve, arena_commit, allow_large, false /* exclusive */, arena_id) == 0;
   s_p_call_from_arena_reserve = false;
+
+  return r;
 }
 
 
@@ -392,7 +414,16 @@ void* _mi_arena_alloc_aligned(size_t size, size_t alignment, size_t align_offset
         // and try allocate in there
         mi_assert_internal(req_arena_id == _mi_arena_id_none());
         p = mi_arena_try_alloc_at_id(arena_id, true, numa_node, size, alignment, commit, allow_large, req_arena_id, memid, tld);
-        if (p != NULL) return p;
+        if (p != NULL) {
+          const size_t arena_index = mi_arena_id_index(arena_id);
+          mi_arena_t* arena = mi_atomic_load_ptr_acquire(mi_arena_t, &mi_arenas[arena_index]);
+          if (s_p_should_proxy_mmap) {
+            arena->managed_by_simple_parallel = true;
+          } else {
+            arena->managed_by_simple_parallel = false;
+          }
+          return p;
+        }
       }
     }
   }

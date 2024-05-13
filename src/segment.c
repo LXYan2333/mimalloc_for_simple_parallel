@@ -10,6 +10,7 @@ terms of the MIT license. A copy of the license can be found in the file
 
 #include <string.h>  // memset
 #include <stdio.h>
+#include <simple_parallel/detail.h>
 
 #define MI_PAGE_HUGE_ALIGN   (256*1024)
 
@@ -894,6 +895,12 @@ static mi_segment_t* mi_segment_alloc(size_t required, size_t page_alignment, mi
   segment->slice_entries = slice_entries;
   segment->kind = (required == 0 ? MI_SEGMENT_NORMAL : MI_SEGMENT_HUGE);
 
+  if (s_p_should_proxy_mmap) {
+    segment->managed_by_simple_parallel = true;
+  } else {
+    segment->managed_by_simple_parallel = false;
+  }
+
   // _mi_memzero(segment->slices, sizeof(mi_slice_t)*(info_slices+1));
   _mi_stat_increase(&tld->stats->page_committed, mi_segment_info_size(segment));
 
@@ -1397,6 +1404,9 @@ static mi_segment_t* mi_segment_try_reclaim(mi_heap_t* heap, size_t needed_slice
     // and push them into the visited list and use many tries. Perhaps we can skip non-suitable ones in a better way?
     bool is_suitable = _mi_heap_memid_is_suitable(heap, segment->memid);
     bool has_page = mi_segment_check_free(segment,needed_slices,block_size,tld); // try to free up pages (due to concurrent frees)
+    if (s_p_should_proxy_mmap && !segment->managed_by_simple_parallel) {
+      is_suitable = false;
+    }
     if (segment->used == 0) {
       // free the segment (by forced reclaim) to make it available to other threads.
       // note1: we prefer to free a segment as that might lead to reclaiming another
@@ -1433,6 +1443,10 @@ void _mi_abandoned_collect(mi_heap_t* heap, bool force, mi_segments_tld_t* tld)
     mi_abandoned_visited_revisit(); 
   }
   while ((max_tries-- > 0) && ((segment = mi_abandoned_pop()) != NULL)) {
+    if (s_p_should_proxy_mmap && !segment->managed_by_simple_parallel) {
+      max_tries++;
+      continue;
+    }
     mi_segment_check_free(segment,0,0,tld); // try to free up pages (due to concurrent frees)
     if (segment->used == 0) {
       // free the segment (by forced reclaim) to make it available to other threads.

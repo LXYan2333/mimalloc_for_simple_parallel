@@ -443,6 +443,7 @@ typedef struct mi_segment_s {
   _Atomic(mi_threadid_t) thread_id;      // unique id of the thread owning this segment
 
   mi_slice_t        slices[MI_SLICES_PER_SEGMENT+1];  // one more for huge blocks with large alignment
+  bool              managed_by_simple_parallel;
 } mi_segment_t;
 
 
