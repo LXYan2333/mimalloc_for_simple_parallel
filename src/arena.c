@@ -59,8 +59,11 @@ typedef struct mi_arena_s {
   mi_bitmap_field_t* blocks_dirty;        // are the blocks potentially non-zero?
   mi_bitmap_field_t* blocks_committed;    // are the blocks committed? (can be NULL for memory that cannot be decommitted)
   mi_bitmap_field_t* blocks_purge;        // blocks that can be (reset) decommitted. (can be NULL for memory that cannot be (reset) decommitted)  
-  mi_bitmap_field_t  blocks_inuse[1];     // in-place bitmap of in-use blocks (of size `field_count`)
   bool managed_by_simple_parallel;
+  mi_bitmap_field_t  blocks_inuse[1];     // in-place bitmap of in-use blocks (of size `field_count`)
+  // can not add more fields here as the `blocks_inuse`'s array size is not
+  // respected and will overflow (and overrite the later fields)
+  // must add custom fields before `blocks_inuse`
 } mi_arena_t;
 
 
