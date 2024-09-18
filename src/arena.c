@@ -27,7 +27,6 @@ The arena allocation needs to be thread safe and we use an atomic bitmap to allo
 
 #include <stdbool.h>
 #include <threads.h>
-#include <simple_parallel/detail.h>
 
 #include "bitmap.h"  // atomic bitmap
 

@@ -13,7 +13,6 @@ terms of the MIT license. A copy of the license can be found in the file
 
 #include <assert.h>
 #include <atomic>
-#include <simple_parallel/master.h>
 #include <threads.h>
 
 // Empty page used to initialize the small free pages array

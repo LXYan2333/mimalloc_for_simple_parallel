@@ -10,7 +10,6 @@ terms of the MIT license. A copy of the license can be found in the file
 
 #include <string.h>  // memset
 #include <stdio.h>
-#include <simple_parallel/detail.h>
 
 #define MI_PAGE_HUGE_ALIGN   (256*1024)
 
