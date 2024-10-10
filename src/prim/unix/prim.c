@@ -173,15 +173,6 @@ static int unix_madvise(void* addr, size_t size, int advice) {
   #endif
 }
 
-__attribute__((visibility("default")))
-void* (*simple_parallel_cross_node_heap_mmap)(void*   __addr,
-                                              size_t  __len,
-                                              int     __prot,
-                                              int     __flags,
-                                              int     __fd,
-                                              __off_t __offset) = NULL;
-
-
 static void* unix_mmap_prim(void* /*unused*/, size_t size, size_t try_alignment, int protect_flags, int flags, int fd) {
   MI_UNUSED(try_alignment);
   void* p = NULL;
@@ -191,9 +182,8 @@ static void* unix_mmap_prim(void* /*unused*/, size_t size, size_t try_alignment,
     void* hint = _mi_os_get_aligned_hint(try_alignment, size);
     {
         if (s_p_should_proxy_mmap && s_p_call_from_arena_reserve) {
-            assert(simple_parallel_cross_node_heap_mmap != NULL);
-            p = simple_parallel_cross_node_heap_mmap(
-                    hint, size, protect_flags, flags, fd, 0);
+            p = simple_parallel::master::cross_node_heap_mmap(
+                hint, size, protect_flags, flags, fd, 0);
       } else {
           p = mmap(hint, size, protect_flags, flags, fd, 0);
       }
