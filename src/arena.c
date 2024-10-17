@@ -178,8 +178,6 @@ static void* mi_arena_static_zalloc(size_t size, size_t alignment, mi_memid_t* m
   return p;
 }
 
-extern __thread bool s_p_call_from_arena_reserve;
-
 static void* mi_arena_meta_zalloc(size_t size, mi_memid_t* memid, mi_stats_t* stats) {
   *memid = _mi_memid_none();
 
@@ -188,14 +186,8 @@ static void* mi_arena_meta_zalloc(size_t size, mi_memid_t* memid, mi_stats_t* st
   if (p != NULL) return p;
 
   // or fall back to the OS
-  bool temp = s_p_call_from_arena_reserve;
-
-  s_p_call_from_arena_reserve = false;
-
   p = _mi_os_alloc(size, memid, stats);
 
-  s_p_call_from_arena_reserve = temp;
-  
   return p;
 }
 
@@ -359,8 +351,6 @@ static mi_decl_noinline void* mi_arena_try_alloc(int numa_node, size_t size, siz
   return NULL;
 }
 
-extern __thread bool s_p_call_from_arena_reserve;
-
 // try to reserve a fresh arena space
 static bool mi_arena_reserve(size_t req_size, bool allow_large, mi_arena_id_t req_arena_id, mi_arena_id_t *arena_id)
 {
@@ -387,11 +377,7 @@ static bool mi_arena_reserve(size_t req_size, bool allow_large, mi_arena_id_t re
   if (mi_option_get(mi_option_arena_eager_commit) == 2)      { arena_commit = _mi_os_has_overcommit(); }
   else if (mi_option_get(mi_option_arena_eager_commit) == 1) { arena_commit = true; }
 
-  s_p_call_from_arena_reserve = true;
-  auto r = mi_reserve_os_memory_ex(arena_reserve, arena_commit, allow_large, false /* exclusive */, arena_id) == 0;
-  s_p_call_from_arena_reserve = false;
-
-  return r;
+  return mi_reserve_os_memory_ex(arena_reserve, arena_commit, allow_large, false /* exclusive */, arena_id) == 0;
 }
 
 

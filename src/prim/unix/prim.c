@@ -150,8 +150,6 @@ __thread bool s_p_should_proxy_mmap = false;
 __attribute__((visibility("default")))
 __thread bool s_p_this_thread_should_be_proxied = true;
 
-__thread bool s_p_call_from_arena_reserve = false;
-
 int _mi_prim_free(void* addr, size_t size ) {
   if (s_p_should_proxy_mmap) {
       simple_parallel::master::register_munmaped_areas(addr, size);
@@ -173,7 +171,7 @@ static int unix_madvise(void* addr, size_t size, int advice) {
   #endif
 }
 
-static void* unix_mmap_prim(void* /*unused*/, size_t size, size_t try_alignment, int protect_flags, int flags, int fd) {
+static void* unix_mmap_prim(void* /*unused*/, size_t size, size_t try_alignment, int protect_flags, int flags, int fd, bool s_p_should_sync) {
   MI_UNUSED(try_alignment);
   void* p = NULL;
 #if (MI_INTPTR_SIZE >= 8) && !defined(MAP_ALIGNED)
@@ -181,7 +179,7 @@ static void* unix_mmap_prim(void* /*unused*/, size_t size, size_t try_alignment,
   {
     void* hint = _mi_os_get_aligned_hint(try_alignment, size);
     {
-        if (s_p_should_proxy_mmap && s_p_call_from_arena_reserve) {
+        if (s_p_should_proxy_mmap && s_p_should_sync) {
             p = simple_parallel::master::cross_node_heap_mmap(
                 hint, size, protect_flags, flags, fd, 0);
       } else {
@@ -218,7 +216,7 @@ static int unix_mmap_fd(void) {
   #endif
 }
 
-static void* unix_mmap(void* addr, size_t size, size_t try_alignment, int protect_flags, bool large_only, bool allow_large, bool* is_large) {
+static void* unix_mmap(void* addr, size_t size, size_t try_alignment, int protect_flags, bool large_only, bool allow_large, bool* is_large, bool s_p_should_sync) {
   #if !defined(MAP_ANONYMOUS)
   #define MAP_ANONYMOUS  MAP_ANON
   #endif
@@ -272,13 +270,13 @@ static void* unix_mmap(void* addr, size_t size, size_t try_alignment, int protec
       if (large_only || lflags != flags) {
         // try large OS page allocation
         *is_large = true;
-        p = unix_mmap_prim(addr, size, try_alignment, protect_flags, lflags, lfd);
+        p = unix_mmap_prim(addr, size, try_alignment, protect_flags, lflags, lfd, s_p_should_sync);
         #ifdef MAP_HUGE_1GB
         if (p == NULL && (lflags & MAP_HUGE_1GB) != 0) {
           mi_huge_pages_available = false; // don't try huge 1GiB pages again
           _mi_warning_message("unable to allocate huge (1GiB) page, trying large (2MiB) pages instead (errno: %i)\n", errno);
           lflags = ((lflags & ~MAP_HUGE_1GB) | MAP_HUGE_2MB);
-          p = unix_mmap_prim(addr, size, try_alignment, protect_flags, lflags, lfd);
+          p = unix_mmap_prim(addr, size, try_alignment, protect_flags, lflags, lfd, s_p_should_sync);
         }
         #endif
         if (large_only) return p;
@@ -291,7 +289,7 @@ static void* unix_mmap(void* addr, size_t size, size_t try_alignment, int protec
   // regular allocation
   if (p == NULL) {
     *is_large = false;
-    p = unix_mmap_prim(addr, size, try_alignment, protect_flags, flags, fd);
+    p = unix_mmap_prim(addr, size, try_alignment, protect_flags, flags, fd, s_p_should_sync);
     if (p != NULL) {
       #if defined(MADV_HUGEPAGE)
       // Many Linux systems don't allow MAP_HUGETLB but they support instead
@@ -321,14 +319,14 @@ static void* unix_mmap(void* addr, size_t size, size_t try_alignment, int protec
 }
 
 // Note: the `try_alignment` is just a hint and the returned pointer is not guaranteed to be aligned.
-int _mi_prim_alloc(size_t size, size_t try_alignment, bool commit, bool allow_large, bool* is_large, bool* is_zero, void** addr) {
+int _mi_prim_alloc(size_t size, size_t try_alignment, bool commit, bool allow_large, bool* is_large, bool* is_zero, void** addr, bool s_p_should_sync) {
   mi_assert_internal(size > 0 && (size % _mi_os_page_size()) == 0);
   mi_assert_internal(commit || !allow_large);
   mi_assert_internal(try_alignment > 0);
   
   *is_zero = true;
   int protect_flags = (commit ? (PROT_WRITE | PROT_READ) : PROT_NONE);  
-  *addr = unix_mmap(NULL, size, try_alignment, protect_flags, false, allow_large, is_large);
+  *addr = unix_mmap(NULL, size, try_alignment, protect_flags, false, allow_large, is_large, s_p_should_sync);
   return (*addr != NULL ? 0 : errno);
 }
 
@@ -438,7 +436,7 @@ static long mi_prim_mbind(void* start, unsigned long len, unsigned long mode, co
 int _mi_prim_alloc_huge_os_pages(void* hint_addr, size_t size, int numa_node, bool* is_zero, void** addr) {
   bool is_large = true;
   *is_zero = true;
-  *addr = unix_mmap(hint_addr, size, MI_SEGMENT_SIZE, PROT_READ | PROT_WRITE, true, true, &is_large);
+  *addr = unix_mmap(hint_addr, size, MI_SEGMENT_SIZE, PROT_READ | PROT_WRITE, true, true, &is_large, false);
   if (*addr != NULL && numa_node >= 0 && numa_node < 8*MI_INTPTR_SIZE) { // at most 64 nodes
     unsigned long numa_mask = (1UL << numa_node);
     // TODO: does `mbind` work correctly for huge OS pages? should we
