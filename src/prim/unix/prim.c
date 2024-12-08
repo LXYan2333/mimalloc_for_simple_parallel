@@ -29,7 +29,7 @@ terms of the MIT license. A copy of the license can be found in the file
 #include <unistd.h>    // sysconf
 
 #include <assert.h>
-#include <threads.h>
+#include <thread>
 
 #if defined(__linux__)
   #include <features.h>

@@ -13,7 +13,7 @@ terms of the MIT license. A copy of the license can be found in the file
 
 #include <assert.h>
 #include <atomic>
-#include <threads.h>
+#include <thread>
 
 // Empty page used to initialize the small free pages array
 const mi_page_t _mi_page_empty = {
