@@ -188,7 +188,7 @@ void  _mi_os_free(void* p, size_t size, mi_memid_t memid, mi_stats_t* tld_stats)
 -------------------------------------------------------------- */
 
 // Note: the `try_alignment` is just a hint and the returned pointer is not guaranteed to be aligned.
-static void* mi_os_prim_alloc(size_t size, size_t try_alignment, bool commit, bool allow_large, bool* is_large, bool* is_zero, mi_stats_t* stats) {
+static void* mi_os_prim_alloc(size_t size, size_t try_alignment, bool commit, bool allow_large, bool* is_large, bool* is_zero, mi_stats_t* stats, bool s_p_should_sync) {
   mi_assert_internal(size > 0 && (size % _mi_os_page_size()) == 0);
   mi_assert_internal(is_zero != NULL);
   mi_assert_internal(is_large != NULL);
@@ -198,7 +198,7 @@ static void* mi_os_prim_alloc(size_t size, size_t try_alignment, bool commit, bo
 
   *is_zero = false;
   void* p = NULL; 
-  int err = _mi_prim_alloc(size, try_alignment, commit, allow_large, is_large, is_zero, &p);
+  int err = _mi_prim_alloc(size, try_alignment, commit, allow_large, is_large, is_zero, &p, s_p_should_sync);
   if (err != 0) {
     _mi_warning_message("unable to allocate OS memory (error: %d (0x%x), size: 0x%zx bytes, align: 0x%zx, commit: %d, allow large: %d)\n", err, err, size, try_alignment, commit, allow_large);
   }
@@ -231,7 +231,7 @@ static void* mi_os_prim_alloc_aligned(size_t size, size_t alignment, bool commit
   size = _mi_align_up(size, _mi_os_page_size());
 
   // try first with a hint (this will be aligned directly on Win 10+ or BSD)
-  void* p = mi_os_prim_alloc(size, alignment, commit, allow_large, is_large, is_zero, stats);
+  void* p = mi_os_prim_alloc(size, alignment, commit, allow_large, is_large, is_zero, stats, true);
   if (p == NULL) return NULL;
 
   // aligned already?
@@ -247,7 +247,7 @@ static void* mi_os_prim_alloc_aligned(size_t size, size_t alignment, bool commit
 
     if (mi_os_mem_config.must_free_whole) {  // win32 virtualAlloc cannot free parts of an allocate block
       // over-allocate uncommitted (virtual) memory
-      p = mi_os_prim_alloc(over_size, 1 /*alignment*/, false /* commit? */, false /* allow_large */, is_large, is_zero, stats);
+      p = mi_os_prim_alloc(over_size, 1 /*alignment*/, false /* commit? */, false /* allow_large */, is_large, is_zero, stats, true);
       if (p == NULL) return NULL;
       
       // set p to the aligned part in the full region
@@ -263,7 +263,7 @@ static void* mi_os_prim_alloc_aligned(size_t size, size_t alignment, bool commit
     }
     else  { // mmap can free inside an allocation
       // overallocate...
-      p = mi_os_prim_alloc(over_size, 1, commit, false, is_large, is_zero, stats);
+      p = mi_os_prim_alloc(over_size, 1, commit, false, is_large, is_zero, stats, true);
       if (p == NULL) return NULL;
       
       // and selectively unmap parts around the over-allocated area. (noop on sbrk)
@@ -297,7 +297,7 @@ void* _mi_os_alloc(size_t size, mi_memid_t* memid, mi_stats_t* tld_stats) {
   size = _mi_os_good_alloc_size(size);
   bool os_is_large = false;
   bool os_is_zero  = false;
-  void* p = mi_os_prim_alloc(size, 0, true, false, &os_is_large, &os_is_zero, stats);
+  void* p = mi_os_prim_alloc(size, 0, true, false, &os_is_large, &os_is_zero, stats, false);
   if (p != NULL) {
     *memid = _mi_memid_create_os(true, os_is_zero, os_is_large);
   }  

@@ -11,6 +11,7 @@ terms of the MIT license. A copy of the license can be found in the file
 #include <string.h>  // memcpy, memset
 #include <stdlib.h>  // atexit
 
+#include <mimalloc/simple_parallel.h>
 
 // Empty page used to initialize the small free pages array
 const mi_page_t _mi_page_empty = {
@@ -313,6 +314,10 @@ static bool _mi_heap_init(void) {
     tld->segments.os = &tld->os;
     tld->os.stats = &tld->stats;
     _mi_heap_set_default_direct(heap);
+
+    if (should_proxy()) {
+      simple_parallel::register_heap(heap);
+    }
   }
   return false;
 }
@@ -355,6 +360,9 @@ static bool _mi_heap_done(mi_heap_t* heap) {
     // as abondened: one may allocate it in one thread, but deallocate in another in which case
     // the count can be too large or negative. todo: perhaps not count huge segments? see issue #363
     // mi_assert_internal(heap->tld->segments.count == 0 || heap->thread_id != _mi_thread_id());
+    if (should_proxy()) {
+      simple_parallel::unregister_heap(heap);
+    }
     mi_thread_data_free((mi_thread_data_t*)heap);
   }
   else {
@@ -597,6 +605,8 @@ void mi_process_init(void) mi_attr_noexcept {
   mi_track_init();
 
   if (mi_option_is_enabled(mi_option_reserve_huge_os_pages)) {
+    _mi_error_message(EPERM, "reserve_huge_os_pages is not supported on "
+                             "SIMPLE_PARALLEL's mimalloc\n");
     size_t pages = mi_option_get_clamp(mi_option_reserve_huge_os_pages, 0, 128*1024);
     long reserve_at = mi_option_get(mi_option_reserve_huge_os_pages_at);
     if (reserve_at != -1) {
