@@ -145,6 +145,11 @@ void _mi_prim_mem_init( mi_os_mem_config_t* config ) {
 //---------------------------------------------
 
 int _mi_prim_free(void* addr, size_t size ) {
+  auto mpi = simple_parallel::get_mpi_info_from_env();
+  if (mpi.world_size == 1 || mpi.world_rank != 0) {
+    bool err = (munmap(addr, size) == -1);
+    return (err ? errno : 0);
+  }
   bool err = (simple_parallel::proxy_munmap(addr, size) == -1);
   return (err ? errno : 0);
 }
@@ -155,6 +160,10 @@ int _mi_prim_free(void* addr, size_t size ) {
 //---------------------------------------------
 
 static int unix_madvise(void* addr, size_t size, int advice) {
+  simple_parallel::mpi_info mpi = simple_parallel::get_mpi_info_from_env();
+  if (mpi.world_size == 1 || mpi.world_rank != 0) {
+    return madvise(addr, size, advice);
+  }
   return simple_parallel::proxy_madvise(addr, size, advice);
 }
 
