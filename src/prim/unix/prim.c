@@ -167,7 +167,7 @@ static int unix_madvise(void* addr, size_t size, int advice) {
   return simple_parallel::proxy_madvise(addr, size, advice);
 }
 
-bool should_proxy() {
+bool mi_should_proxy() {
   simple_parallel::mpi_info mpi = simple_parallel::get_mpi_info_from_env();
   return mpi.world_size != -1    // run with OpenMPI and envs are correctly read
          && mpi.world_size != 1  // not single rank
@@ -177,7 +177,7 @@ bool should_proxy() {
 static void* unix_mmap_prim(void* addr, size_t size, size_t try_alignment, int protect_flags, int flags, int fd, bool s_p_should_sync) {
   MI_UNUSED(try_alignment);
   void* p = NULL;
-  if (s_p_should_sync && should_proxy()) {
+  if (s_p_should_sync && mi_should_proxy()) {
     p = simple_parallel::proxy_mmap(addr, size, protect_flags, flags, fd, 0);
     return p;
   }

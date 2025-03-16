@@ -315,7 +315,7 @@ static bool _mi_heap_init(void) {
     tld->os.stats = &tld->stats;
     _mi_heap_set_default_direct(heap);
 
-    if (should_proxy()) {
+    if (mi_should_proxy()) {
       simple_parallel::register_heap(heap);
     }
   }
@@ -360,7 +360,7 @@ static bool _mi_heap_done(mi_heap_t* heap) {
     // as abondened: one may allocate it in one thread, but deallocate in another in which case
     // the count can be too large or negative. todo: perhaps not count huge segments? see issue #363
     // mi_assert_internal(heap->tld->segments.count == 0 || heap->thread_id != _mi_thread_id());
-    if (should_proxy()) {
+    if (mi_should_proxy()) {
       simple_parallel::unregister_heap(heap);
     }
     mi_thread_data_free((mi_thread_data_t*)heap);

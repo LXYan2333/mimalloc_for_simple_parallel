@@ -1,7 +1,7 @@
 #pragma once
 
 #include <mimalloc.h>
-#include <sys/types.h>
+#include <mimalloc/types.h>
 
 namespace simple_parallel {
 __attribute__((visibility("default"))) void register_heap(mi_heap_t *heap);
@@ -27,4 +27,9 @@ __attribute__((visibility("default"))) auto proxy_munmap(void *addr,
 
 } // namespace simple_parallel
 
-auto should_proxy() -> bool;
+auto mi_should_proxy() -> bool;
+
+auto _mi_os_alloc(size_t size, mi_memid_t *memid, mi_stats_t *tld_stats)
+    -> void *;
+
+void _mi_os_free(void *p, size_t size, mi_memid_t memid, mi_stats_t *tld_stats);
